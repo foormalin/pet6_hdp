@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install validators
         run: |
@@ -51,7 +51,7 @@ jobs:
         run: docker compose config --quiet
 
       - name: Validate Nginx configuration
-        run: docker run --rm --volume "$PWD/config/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.28-alpine nginx -t
+        run: docker run --rm --add-host glpi:127.0.0.1 --volume "$PWD/config/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.28-alpine nginx -t
 
       - name: Validate Prometheus configuration
         run: docker run --rm --entrypoint /bin/promtool --volume "$PWD/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.13.3 check config /etc/prometheus/prometheus.yml
@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare CI environment
         run: |
