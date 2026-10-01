@@ -1,0 +1,89 @@
+name: Validate helpdesk platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helpdesk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Static validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install validators
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck yamllint
+
+      - name: Check repository structure
+        run: sh tests/validate_repo.sh
+
+      - name: Check shell scripts
+        run: shellcheck scripts/*.sh tests/*.sh
+
+      - name: Check YAML
+        run: yamllint -c .yamllint.yml .
+
+      - name: Check JSON
+        run: jq empty monitoring/grafana/dashboards/*.json
+
+      - name: Prepare CI environment
+        run: |
+          cp .env.example .env
+          sed -i 's/change_me_glpi_32_chars/ci_glpi_password_1234567890/' .env
+          sed -i 's/change_me_root_32_chars/ci_root_password_1234567890/' .env
+          sed -i 's/change_me_metrics_32_chars/ci_metrics_password_123456/' .env
+          sed -i 's/change_me_grafana_32_chars/ci_grafana_password_123456/' .env
+
+      - name: Validate Compose model
+        run: docker compose config --quiet
+
+      - name: Validate Nginx configuration
+        run: docker run --rm --volume "$PWD/config/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.28-alpine nginx -t
+
+      - name: Validate Prometheus configuration
+        run: docker run --rm --entrypoint /bin/promtool --volume "$PWD/config/prometheus:/etc/prometheus:ro" prom/prometheus:v3.13.3 check config /etc/prometheus/prometheus.yml
+
+  smoke:
+    name: Start stack and run health checks
+    needs: validate
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare CI environment
+        run: |
+          cp .env.example .env
+          sed -i 's/change_me_glpi_32_chars/ci_glpi_password_1234567890/' .env
+          sed -i 's/change_me_root_32_chars/ci_root_password_1234567890/' .env
+          sed -i 's/change_me_metrics_32_chars/ci_metrics_password_123456/' .env
+          sed -i 's/change_me_grafana_32_chars/ci_grafana_password_123456/' .env
+
+      - name: Start stack
+        run: docker compose up --detach --wait --wait-timeout 360
+
+      - name: Verify service and database
+        run: sh scripts/healthcheck.sh
+
+      - name: Show diagnostics on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans

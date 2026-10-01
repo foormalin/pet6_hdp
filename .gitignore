@@ -1,0 +1,10 @@
+.env
+backups/*
+!backups/.gitkeep
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+coverage/
